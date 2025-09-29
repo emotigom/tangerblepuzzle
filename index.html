@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>토너먼트용 임시사이트입니다..!</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; padding:12px; background:#f5f5f5; margin:0; }
+  #wrap { display:flex; gap:12px; height:100vh; box-sizing:border-box; }
+  #left { width:160px; display:flex; flex-direction:column; }
+  #puzzlePalette { flex:1; overflow:auto; background:#fff; border:1px solid #ccc; padding:6px; }
+  #puzzlePalette img { width:100%; margin-bottom:6px; cursor:pointer; display:block; }
+  #canvasContainer { flex:1; display:flex; flex-direction:column; background:#fff; border:1px solid #aaa; }
+  #canvasBox { flex:1; display:flex; align-items:center; justify-content:center; }
+  canvas { border:0; max-width:100%; max-height:100%; }
+  #controls { padding:6px; background:#f0f0f0; border-top:1px solid #ccc; }
+  button { margin-right:6px; padding:6px 10px; }
+</style>
+</head>
+<body>
+  <h3>클릭 또는 드래그&드롭으로 배치하세요~ 클릭시 회전됩니다</h3>
+  <div id="wrap">
+    <div id="left">
+      <div>팔레트</div>
+      <div id="puzzlePalette" ondragover="event.preventDefault();"></div>
+    </div>
+
+    <div id="canvasContainer">
+      <div id="canvasBox">
+        <canvas id="c"></canvas>
+      </div>
+      <div id="controls">
+        <button id="btnRandom">랜덤배치</button>
+        <button id="btnReset">초기화</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const canvas = new fabric.Canvas('c', { selection: true });
+  const grid = 30; // 그리드 간격
+  let externalDrag = false;
+  let lastMouseDown = null;
+  let maybeClick = false;
+
+  // 초기 크기 맞추기
+  function resizeCanvas() {
+    const box = document.getElementById('canvasBox');
+    canvas.setWidth(box.clientWidth);
+    canvas.setHeight(box.clientHeight);
+    drawGrid();
+    canvas.requestRenderAll();
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // 그리드 다시 그리기
+  function drawGrid() {
+    // 기존 그리드 제거
+    canvas.getObjects('line').forEach(line => canvas.remove(line));
+    for (let i = 0; i <= canvas.getWidth(); i += grid) {
+      canvas.add(new fabric.Line([i,0,i,canvas.getHeight()], { stroke:'#f0f0f0', selectable:false, evented:false }));
+    }
+    for (let j = 0; j <= canvas.getHeight(); j += grid) {
+      canvas.add(new fabric.Line([0,j,canvas.getWidth(),j], { stroke:'#f0f0f0', selectable:false, evented:false }));
+    }
+  }
+
+  // 퍼즐 팔레트 채우기
+  const pal = document.getElementById('puzzlePalette');
+  for (let i=1; i<=16; i++) {
+    const img = document.createElement('img');
+    img.src = `puzzles/${i}.png`;
+    img.alt = `${i}`;
+    img.draggable = true;
+
+    // 드래그 시작
+    img.addEventListener('dragstart', (e) => {
+      externalDrag = true;
+      e.dataTransfer.setData('text/plain', img.src);
+    });
+    img.addEventListener('dragend', () => setTimeout(()=> externalDrag=false,50));
+
+    // 클릭 시 중앙 배치
+    img.addEventListener('click', () => {
+      addPuzzleToCanvas(img.src, canvas.width/2, canvas.height/2);
+    });
+
+    pal.appendChild(img);
+  }
+
+  // 캔버스 drop 처리
+  const upper = canvas.upperCanvasEl;
+  upper.addEventListener('dragover', (e)=> e.preventDefault());
+  upper.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const src = e.dataTransfer.getData('text/plain');
+    if (!src) { externalDrag=false; return; }
+    const rect = upper.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    addPuzzleToCanvas(src, x, y);
+    externalDrag=false;
+  });
+
+  // 캔버스에 퍼즐 추가 함수
+  function addPuzzleToCanvas(src, left, top) {
+    fabric.Image.fromURL(src, function(img) {
+      const scale = 0.75; // 팔레트와 동일한 비율
+      img.set({
+        left,
+        top,
+        originX: 'center',
+        originY: 'center',
+        selectable: true,
+        hasControls: true,
+        angle: 0,
+        scaleX: scale,
+        scaleY: scale
+      });
+      canvas.add(img);
+      canvas.requestRenderAll();
+    });
+  }
+
+  // 클릭 판별 (회전)
+  canvas.on('mouse:down', function(opt) {
+    const e = opt.e;
+    lastMouseDown = { x: e.clientX, y: e.clientY, time: Date.now() };
+    maybeClick = true;
+  });
+  canvas.on('mouse:up', function(opt) {
+    const e = opt.e;
+    const target = opt.target;
+    if (externalDrag || !target) { maybeClick=false; return; }
+    const dx = Math.abs(e.clientX - lastMouseDown.x);
+    const dy = Math.abs(e.clientY - lastMouseDown.y);
+    const moved = Math.sqrt(dx*dx + dy*dy);
+    if (maybeClick && moved <= 6) {
+      if (e.button === 0) target.rotate((target.angle || 0) - 45);
+      else if (e.button === 2) target.rotate((target.angle || 0) + 45);
+      canvas.requestRenderAll();
+    }
+    maybeClick=false;
+  });
+  // 우클릭 메뉴 기본 유지 (원하면 막을 수 있음)
+  // upper.oncontextmenu = e => e.preventDefault();
+
+  // 버튼 동작
+  document.getElementById('btnRandom').onclick = () => {
+    canvas.getObjects('image').forEach(o => {
+      o.set({
+        left: Math.random()*(canvas.getWidth()-grid*2)+grid,
+        top: Math.random()*(canvas.getHeight()-grid*2)+grid,
+        angle: 0
+      });
+    });
+    canvas.requestRenderAll();
+  };
+  document.getElementById('btnReset').onclick = () => {
+    canvas.getObjects('image').forEach(o => canvas.remove(o));
+  };
+</script>
+</body>
+</html>
