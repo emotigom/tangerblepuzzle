@@ -1,165 +1,363 @@
 <!doctype html>
 <html lang="ko">
-<head>
-<meta charset="utf-8" />
-<title>토너먼트용 임시사이트입니다..!</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; padding:12px; background:#f5f5f5; margin:0; }
-  #wrap { display:flex; gap:12px; height:100vh; box-sizing:border-box; }
-  #left { width:160px; display:flex; flex-direction:column; }
-  #puzzlePalette { flex:1; overflow:auto; background:#fff; border:1px solid #ccc; padding:6px; }
-  #puzzlePalette img { width:100%; margin-bottom:6px; cursor:pointer; display:block; }
-  #canvasContainer { flex:1; display:flex; flex-direction:column; background:#fff; border:1px solid #aaa; }
-  #canvasBox { flex:1; display:flex; align-items:center; justify-content:center; }
-  canvas { border:0; max-width:100%; max-height:100%; }
-  #controls { padding:6px; background:#f0f0f0; border-top:1px solid #ccc; }
-  button { margin-right:6px; padding:6px 10px; }
-</style>
-</head>
-<body>
-  <h3>클릭 또는 드래그&드롭으로 배치하세요~ 클릭시 회전됩니다</h3>
-  <div id="wrap">
-    <div id="left">
-      <div>팔레트</div>
-      <div id="puzzlePalette" ondragover="event.preventDefault();"></div>
-    </div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="사용 권한이 있는 퍼즐 이미지를 로컬에서 배치하는 비공식 보조도구"
+    />
+    <title>Local Puzzle Board</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, Pretendard, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #172033;
+        background: #eef1f6;
+      }
 
-    <div id="canvasContainer">
-      <div id="canvasBox">
-        <canvas id="c"></canvas>
-      </div>
-      <div id="controls">
-        <button id="btnRandom">랜덤배치</button>
-        <button id="btnReset">초기화</button>
-      </div>
-    </div>
-  </div>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
 
-<script>
-  const canvas = new fabric.Canvas('c', { selection: true });
-  const grid = 30; // 그리드 간격
-  let externalDrag = false;
-  let lastMouseDown = null;
-  let maybeClick = false;
+      .app {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) 1fr;
+        min-height: 100vh;
+      }
 
-  // 초기 크기 맞추기
-  function resizeCanvas() {
-    const box = document.getElementById('canvasBox');
-    canvas.setWidth(box.clientWidth);
-    canvas.setHeight(box.clientHeight);
-    drawGrid();
-    canvas.requestRenderAll();
-  }
-  window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 24px;
+        background: #121827;
+        color: #f8fafc;
+      }
 
-  // 그리드 다시 그리기
-  function drawGrid() {
-    // 기존 그리드 제거
-    canvas.getObjects('line').forEach(line => canvas.remove(line));
-    for (let i = 0; i <= canvas.getWidth(); i += grid) {
-      canvas.add(new fabric.Line([i,0,i,canvas.getHeight()], { stroke:'#f0f0f0', selectable:false, evented:false }));
-    }
-    for (let j = 0; j <= canvas.getHeight(); j += grid) {
-      canvas.add(new fabric.Line([0,j,canvas.getWidth(),j], { stroke:'#f0f0f0', selectable:false, evented:false }));
-    }
-  }
+      .eyebrow {
+        margin: 0 0 6px;
+        color: #92a1bc;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
 
-  // 퍼즐 팔레트 채우기
-  const pal = document.getElementById('puzzlePalette');
-  for (let i=1; i<=16; i++) {
-    const img = document.createElement('img');
-    img.src = `puzzles/${i}.png`;
-    img.alt = `${i}`;
-    img.draggable = true;
+      h1 { margin: 0; font-size: 24px; }
+      .scope { margin: 8px 0 0; color: #b9c3d5; font-size: 13px; line-height: 1.6; }
 
-    // 드래그 시작
-    img.addEventListener('dragstart', (e) => {
-      externalDrag = true;
-      e.dataTransfer.setData('text/plain', img.src);
-    });
-    img.addEventListener('dragend', () => setTimeout(()=> externalDrag=false,50));
+      .upload {
+        display: grid;
+        gap: 8px;
+        padding: 16px;
+        border: 1px dashed #63708a;
+        border-radius: 12px;
+        background: #192235;
+      }
 
-    // 클릭 시 중앙 배치
-    img.addEventListener('click', () => {
-      addPuzzleToCanvas(img.src, canvas.width/2, canvas.height/2);
-    });
+      .upload strong { font-size: 14px; }
+      .upload span { color: #aeb9cc; font-size: 12px; line-height: 1.5; }
+      .upload input { width: 100%; color: #dce5f4; font-size: 12px; }
 
-    pal.appendChild(img);
-  }
+      .palette-header,
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
 
-  // 캔버스 drop 처리
-  const upper = canvas.upperCanvasEl;
-  upper.addEventListener('dragover', (e)=> e.preventDefault());
-  upper.addEventListener('drop', (e) => {
-    e.preventDefault();
-    const src = e.dataTransfer.getData('text/plain');
-    if (!src) { externalDrag=false; return; }
-    const rect = upper.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-    addPuzzleToCanvas(src, x, y);
-    externalDrag=false;
-  });
+      .palette-header h2 { margin: 0; font-size: 15px; }
+      .count { color: #9daac0; font-size: 12px; }
 
-  // 캔버스에 퍼즐 추가 함수
-  function addPuzzleToCanvas(src, left, top) {
-    fabric.Image.fromURL(src, function(img) {
-      const scale = 0.75; // 팔레트와 동일한 비율
-      img.set({
-        left,
-        top,
-        originX: 'center',
-        originY: 'center',
-        selectable: true,
-        hasControls: true,
-        angle: 0,
-        scaleX: scale,
-        scaleY: scale
+      .palette {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        overflow: auto;
+        min-height: 120px;
+        max-height: calc(100vh - 330px);
+        padding-right: 4px;
+      }
+
+      .palette-empty {
+        grid-column: 1 / -1;
+        margin: 0;
+        padding: 20px 12px;
+        border-radius: 10px;
+        background: #192235;
+        color: #8997ae;
+        font-size: 12px;
+        line-height: 1.6;
+        text-align: center;
+      }
+
+      .palette-item {
+        display: grid;
+        place-items: center;
+        min-height: 84px;
+        padding: 8px;
+        border: 1px solid #33405a;
+        border-radius: 10px;
+        background: #f8fafc;
+      }
+
+      .palette-item img {
+        display: block;
+        width: 100%;
+        height: 72px;
+        object-fit: contain;
+        cursor: grab;
+      }
+
+      .workspace { display: flex; flex-direction: column; min-width: 0; padding: 22px; }
+
+      .toolbar {
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        padding-bottom: 14px;
+      }
+
+      .button {
+        min-height: 38px;
+        padding: 8px 14px;
+        border: 1px solid #c7cfdd;
+        border-radius: 9px;
+        background: #fff;
+        color: #243047;
+        font-weight: 700;
+      }
+
+      .button:hover { border-color: #7786a2; }
+      .button-danger { color: #a12626; }
+      .button-dark { border-color: #33405a; background: #243047; color: #fff; }
+
+      .canvas-shell {
+        flex: 1;
+        min-height: 560px;
+        overflow: hidden;
+        border: 1px solid #c7cfdd;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 18px 45px rgb(31 42 68 / 10%);
+      }
+
+      .canvas-box { width: 100%; height: 100%; min-height: 560px; }
+      canvas { display: block; }
+
+      .footnote {
+        margin: 12px 2px 0;
+        color: #66738a;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 760px) {
+        .app { grid-template-columns: 1fr; }
+        .sidebar { min-height: auto; }
+        .palette { grid-template-columns: repeat(4, minmax(0, 1fr)); max-height: 230px; }
+        .workspace { padding: 14px; }
+        .canvas-shell, .canvas-box { min-height: 520px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <aside class="sidebar">
+        <header>
+          <p class="eyebrow">Unofficial local tool</p>
+          <h1>Local Puzzle Board</h1>
+          <p class="scope">이미지는 이 브라우저에서만 처리되며 서버로 전송되지 않습니다.</p>
+        </header>
+
+        <label class="upload" for="imageFiles">
+          <strong>퍼즐 이미지 불러오기</strong>
+          <span>직접 제작했거나 사용 허가를 받은 PNG, JPG, WebP 파일</span>
+          <input id="imageFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+        </label>
+
+        <div class="palette-header">
+          <h2>팔레트</h2>
+          <span id="imageCount" class="count">0개</span>
+        </div>
+        <div id="puzzlePalette" class="palette">
+          <p class="palette-empty">이미지를 불러오면 여기에 표시됩니다.</p>
+        </div>
+      </aside>
+
+      <section class="workspace" aria-label="퍼즐 배치 작업 영역">
+        <div class="toolbar">
+          <button id="btnRandom" class="button" type="button">랜덤 배치</button>
+          <button id="btnReset" class="button button-danger" type="button">보드 초기화</button>
+          <button id="btnClear" class="button button-dark" type="button">이미지 해제</button>
+        </div>
+        <div class="canvas-shell">
+          <div id="canvasBox" class="canvas-box"><canvas id="c"></canvas></div>
+        </div>
+        <p class="footnote">클릭: 보드 중앙에 추가 · 드래그: 원하는 위치에 추가 · 보드의 조각 클릭: 45° 회전</p>
+        <p class="footnote">Code by Ahn Sangkyoon · 비공식 보조도구 · Tangible 관련 명칭·제품·콘텐츠의 권리는 각 권리자에게 있습니다.</p>
+      </section>
+    </main>
+
+    <script>
+      const canvas = new fabric.Canvas("c", { selection: true, preserveObjectStacking: true });
+      const grid = 30;
+      const palette = document.querySelector("#puzzlePalette");
+      const imageFiles = document.querySelector("#imageFiles");
+      const imageCount = document.querySelector("#imageCount");
+      const objectUrls = new Set();
+
+      function drawGrid() {
+        canvas.getObjects("line").forEach((line) => canvas.remove(line));
+
+        for (let x = 0; x <= canvas.getWidth(); x += grid) {
+          canvas.add(new fabric.Line([x, 0, x, canvas.getHeight()], {
+            stroke: "#edf0f5",
+            selectable: false,
+            evented: false,
+            excludeFromExport: true
+          }));
+        }
+
+        for (let y = 0; y <= canvas.getHeight(); y += grid) {
+          canvas.add(new fabric.Line([0, y, canvas.getWidth(), y], {
+            stroke: "#edf0f5",
+            selectable: false,
+            evented: false,
+            excludeFromExport: true
+          }));
+        }
+
+        canvas.getObjects("line").forEach((line) => canvas.sendToBack(line));
+      }
+
+      function resizeCanvas() {
+        const box = document.querySelector("#canvasBox");
+        canvas.setDimensions({ width: box.clientWidth, height: box.clientHeight });
+        drawGrid();
+        canvas.requestRenderAll();
+      }
+
+      function addPuzzleToCanvas(src, left, top) {
+        fabric.Image.fromURL(src, (image) => {
+          const maxSide = 150;
+          const scale = Math.min(maxSide / image.width, maxSide / image.height, 1);
+          image.set({
+            left,
+            top,
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            angle: 0,
+            scaleX: scale,
+            scaleY: scale
+          });
+          canvas.add(image);
+          canvas.setActiveObject(image);
+          canvas.requestRenderAll();
+        });
+      }
+
+      function createPaletteItem(file) {
+        const src = URL.createObjectURL(file);
+        objectUrls.add(src);
+
+        const item = document.createElement("div");
+        item.className = "palette-item";
+
+        const image = document.createElement("img");
+        image.src = src;
+        image.alt = file.name;
+        image.draggable = true;
+        image.addEventListener("click", () => {
+          addPuzzleToCanvas(src, canvas.getWidth() / 2, canvas.getHeight() / 2);
+        });
+        image.addEventListener("dragstart", (event) => {
+          event.dataTransfer.setData("text/plain", src);
+        });
+
+        item.append(image);
+        palette.append(item);
+      }
+
+      function clearImages() {
+        canvas.getObjects("image").forEach((image) => canvas.remove(image));
+        objectUrls.forEach((url) => URL.revokeObjectURL(url));
+        objectUrls.clear();
+        imageFiles.value = "";
+        palette.replaceChildren();
+        const empty = document.createElement("p");
+        empty.className = "palette-empty";
+        empty.textContent = "이미지를 불러오면 여기에 표시됩니다.";
+        palette.append(empty);
+        imageCount.textContent = "0개";
+        canvas.requestRenderAll();
+      }
+
+      imageFiles.addEventListener("change", () => {
+        const files = [...imageFiles.files]
+          .filter((file) => ["image/png", "image/jpeg", "image/webp"].includes(file.type))
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+        clearImages();
+        if (!files.length) return;
+        palette.replaceChildren();
+        files.forEach(createPaletteItem);
+        imageCount.textContent = `${files.length}개`;
       });
-      canvas.add(img);
-      canvas.requestRenderAll();
-    });
-  }
 
-  // 클릭 판별 (회전)
-  canvas.on('mouse:down', function(opt) {
-    const e = opt.e;
-    lastMouseDown = { x: e.clientX, y: e.clientY, time: Date.now() };
-    maybeClick = true;
-  });
-  canvas.on('mouse:up', function(opt) {
-    const e = opt.e;
-    const target = opt.target;
-    if (externalDrag || !target) { maybeClick=false; return; }
-    const dx = Math.abs(e.clientX - lastMouseDown.x);
-    const dy = Math.abs(e.clientY - lastMouseDown.y);
-    const moved = Math.sqrt(dx*dx + dy*dy);
-    if (maybeClick && moved <= 6) {
-      if (e.button === 0) target.rotate((target.angle || 0) - 45);
-      else if (e.button === 2) target.rotate((target.angle || 0) + 45);
-      canvas.requestRenderAll();
-    }
-    maybeClick=false;
-  });
-  // 우클릭 메뉴 기본 유지 (원하면 막을 수 있음)
-  // upper.oncontextmenu = e => e.preventDefault();
-
-  // 버튼 동작
-  document.getElementById('btnRandom').onclick = () => {
-    canvas.getObjects('image').forEach(o => {
-      o.set({
-        left: Math.random()*(canvas.getWidth()-grid*2)+grid,
-        top: Math.random()*(canvas.getHeight()-grid*2)+grid,
-        angle: 0
+      const upperCanvas = canvas.upperCanvasEl;
+      upperCanvas.addEventListener("dragover", (event) => event.preventDefault());
+      upperCanvas.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const src = event.dataTransfer.getData("text/plain");
+        if (!objectUrls.has(src)) return;
+        const rect = upperCanvas.getBoundingClientRect();
+        const left = (event.clientX - rect.left) * (canvas.getWidth() / rect.width);
+        const top = (event.clientY - rect.top) * (canvas.getHeight() / rect.height);
+        addPuzzleToCanvas(src, left, top);
       });
-    });
-    canvas.requestRenderAll();
-  };
-  document.getElementById('btnReset').onclick = () => {
-    canvas.getObjects('image').forEach(o => canvas.remove(o));
-  };
-</script>
-</body>
+
+      let pointerDown = null;
+      canvas.on("mouse:down", ({ e }) => {
+        pointerDown = { x: e.clientX, y: e.clientY };
+      });
+      canvas.on("mouse:up", ({ e, target }) => {
+        if (!pointerDown || !target || target.type === "line") return;
+        const distance = Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y);
+        if (distance <= 6) {
+          target.rotate((target.angle || 0) - 45);
+          canvas.requestRenderAll();
+        }
+        pointerDown = null;
+      });
+
+      document.querySelector("#btnRandom").addEventListener("click", () => {
+        canvas.getObjects("image").forEach((image) => {
+          image.set({
+            left: Math.random() * Math.max(canvas.getWidth() - grid * 2, 1) + grid,
+            top: Math.random() * Math.max(canvas.getHeight() - grid * 2, 1) + grid,
+            angle: 0
+          });
+          image.setCoords();
+        });
+        canvas.requestRenderAll();
+      });
+
+      document.querySelector("#btnReset").addEventListener("click", () => {
+        canvas.getObjects("image").forEach((image) => canvas.remove(image));
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+      });
+      document.querySelector("#btnClear").addEventListener("click", clearImages);
+      window.addEventListener("resize", resizeCanvas);
+      window.addEventListener("pagehide", () => objectUrls.forEach((url) => URL.revokeObjectURL(url)));
+
+      resizeCanvas();
+    </script>
+  </body>
 </html>
